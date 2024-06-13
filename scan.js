@@ -64,16 +64,19 @@ async function checkUrls() {
         const contentResponse = await axios.get(location);
         processContent(contentResponse, url, currentUrl, totalUrls);
       } else if (response.status === 404) {
+        // no content b/c of 404 so just write to file
         fs.appendFileSync(errorUrl, `404: ${url}\n`);
         console.log(
           `Finished: ${currentUrl} of ${totalUrls}: 404 error for ${url}`
         );
       } else if (response.status === 403) {
+        // no content b/c of unauthorized so just write to file
         fs.appendFileSync(errorUrl, `403: ${url}\n`);
         console.log(
           `Finished: ${currentUrl} of ${totalUrls}: ❌ 403 error for ${url}`
         );
       } else {
+        // no content (probably b/c of so 'nosniff' just write to file
         fs.appendFileSync(errorUrl, `Unknown: ${url}\n`);
         console.log(
           `Finished: ${currentUrl} of ${totalUrls}: Unknown error for ${url}`
@@ -87,6 +90,7 @@ async function checkUrls() {
     }
   }
 
+  // setup counts for each category
   const withPartnerUrlCount = fs
     .readFileSync(withPartnerUrl, "utf-8")
     .split("\n")
@@ -100,6 +104,7 @@ async function checkUrls() {
     .split("\n")
     .filter(Boolean).length;
 
+  // print out the report
   console.log("\nReport generated:");
   console.log(`URLs with EAB Form: ${withPartnerUrlCount}`);
   console.log(`URLs without EAB Form: ${withoutPartnerUrlCount}`);
@@ -107,6 +112,7 @@ async function checkUrls() {
   console.log("---------------------------------");
   console.log(`Total URLs scanned: ${totalUrls}`);
 
+  // check if the total matches the sum of the three categories
   if (
     totalUrls !==
     withPartnerUrlCount + withoutPartnerUrlCount + withErrorUrlCount
