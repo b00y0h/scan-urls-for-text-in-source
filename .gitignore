@@ -1,0 +1,6 @@
+*.txt
+*.sh
+node_modules
+
+# Don't ignore the sample
+!sample_url.txt
