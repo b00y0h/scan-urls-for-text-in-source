@@ -4,7 +4,7 @@ const axios = require("axios");
 
 // Check if the input file is provided
 if (process.argv.length < 3) {
-  console.error("Usage: node script.js <file_with_urls>");
+  console.error("Usage: node scan.js <file_with_urls>");
   process.exit(1);
 }
 
