@@ -4,13 +4,17 @@ const axios = require("axios");
 
 // Check if the input file is provided
 if (process.argv.length < 3) {
-  console.error("Usage: node scan.js <file_with_urls>");
+  console.error(
+    "Usage: node scan.js <file_with_urls> optional:<search_string>"
+  );
   process.exit(1);
 }
 
 const inputFile = process.argv[2];
-const withPartnerUrl = "with_form.txt";
-const withoutPartnerUrl = "without_form.txt";
+// Capture the search string from the command line or use default
+const searchString = process.argv[3] || "data-partnerurl";
+const withPartnerUrl = "with_text.txt";
+const withoutPartnerUrl = "without_text.txt";
 const errorUrl = "error_url.txt";
 
 // Empty the output files if they exist
@@ -18,77 +22,81 @@ fs.writeFileSync(withPartnerUrl, "");
 fs.writeFileSync(withoutPartnerUrl, "");
 fs.writeFileSync(errorUrl, "");
 
-function processContent(contentResponse, url, currentUrl, totalUrls) {
-  if (contentResponse.data.includes("data-partnerurl")) {
+function processContent(
+  contentResponse,
+  url,
+  currentUrl,
+  totalUrls,
+  searchString
+) {
+  if (contentResponse.data.includes(searchString)) {
     fs.appendFileSync(withPartnerUrl, `${url}\n`);
     console.log(`Finished: ${currentUrl} of ${totalUrls}: ✅ : ${url}`);
   } else {
     fs.appendFileSync(withoutPartnerUrl, `${url}\n`);
-    console.log(`Finished: ${currentUrl} of ${totalUrls}: ❌`);
+    console.log(`Finished: ${currentUrl} of ${totalUrls}: ❌ : ${url}`);
   }
 }
 
 async function checkUrls() {
   const fileStream = fs.createReadStream(inputFile);
+  // write to the console what file was read
+  process.stdout.write(`Scanning for: ${searchString} in ${inputFile}\n`);
+
+  // Create a readline interface
   const rl = readline.createInterface({
     input: fileStream,
     crlfDelay: Infinity,
   });
 
-  let totalUrls = 0;
+  // let totalUrls = 0;
   const urls = [];
 
+  // Read each line from the file and push it to the urls array
   for await (const line of rl) {
     urls.push(line);
-    totalUrls++;
+    // totalUrls++;
   }
 
   let currentUrl = 0;
 
-  for (const url of urls) {
-    currentUrl++;
-    process.stdout.write(`Scanning... ${currentUrl} of ${totalUrls}\r`);
-    try {
-      const response = await axios.head(url, {
-        validateStatus: function (status) {
-          // Resolve the promise when the status code is less than 500
-          return status < 500;
-        },
-      });
+  const totalUrls = urls.length;
 
-      if (response.status === 200) {
-        const contentResponse = await axios.get(url);
-        processContent(contentResponse, url, currentUrl, totalUrls);
-      } else if (response.status === 301) {
-        const location = response.headers.location;
-        const contentResponse = await axios.get(location);
-        processContent(contentResponse, url, currentUrl, totalUrls);
-      } else if (response.status === 404) {
-        // no content b/c of 404 so just write to file
-        fs.appendFileSync(errorUrl, `404: ${url}\n`);
-        console.log(
-          `Finished: ${currentUrl} of ${totalUrls}: 404 error for ${url}`
+  const requests = urls.map((url) => {
+    return axios
+      .head(url, {
+        validateStatus: function (status) {
+          return status < 500; // Accept statuses less than 500
+        },
+      })
+      .then((response) => {
+        if (response.status === 200 || response.status === 301) {
+          // For 301 redirects, use the location header for the GET request
+          const targetUrl =
+            response.status === 301 ? response.headers.location : url;
+          return axios.get(targetUrl);
+        } else {
+          throw new Error(`Status code ${response.status} for URL: ${url}`);
+        }
+      })
+      .then((contentResponse) => {
+        currentUrl++;
+        processContent(
+          contentResponse,
+          url,
+          currentUrl,
+          totalUrls,
+          searchString
         );
-      } else if (response.status === 403) {
-        // no content b/c of unauthorized so just write to file
-        fs.appendFileSync(errorUrl, `403: ${url}\n`);
-        console.log(
-          `Finished: ${currentUrl} of ${totalUrls}: ❌ 403 error for ${url}`
-        );
-      } else {
-        // no content (probably b/c of so 'nosniff' just write to file
-        fs.appendFileSync(errorUrl, `Unknown: ${url}\n`);
-        console.log(
-          `Finished: ${currentUrl} of ${totalUrls}: Unknown error for ${url}`
-        );
-      }
-    } catch (error) {
-      fs.appendFileSync(errorUrl, `Unknown: ${url}\n`);
-      console.log(
-        `Finished: ${currentUrl} of ${totalUrls}: Error for ${url}: ${error.message}`
-      );
-    }
-  }
+      })
+      .catch((error) => {
+        fs.appendFileSync(errorUrl, `${error.message}: ${url}\n`);
+        console.error(`Error processing URL ${url}: ${error.message}`);
+      });
+  });
+
+  await Promise.allSettled(requests);
+  console.log("All URLs have been processed.");
 
   // setup counts for each category
   const withPartnerUrlCount = fs
@@ -106,8 +114,8 @@ async function checkUrls() {
 
   // print out the report
   console.log("\nReport generated:");
-  console.log(`URLs with EAB Form: ${withPartnerUrlCount}`);
-  console.log(`URLs without EAB Form: ${withoutPartnerUrlCount}`);
+  console.log(`URLs with ${searchString}: ${withPartnerUrlCount}`);
+  console.log(`URLs without ${searchString}: ${withoutPartnerUrlCount}`);
   console.log(`URLs with Error: ${withErrorUrlCount}`);
   console.log("---------------------------------");
   console.log(`Total URLs scanned: ${totalUrls}`);
